@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "475455609892",
+    "firebase_url": "https://tradeit-d95a4-default-rtdb.firebaseio.com",
+    "project_id": "tradeit-d95a4",
+    "storage_bucket": "tradeit-d95a4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:475455609892:android:a8d7b3565348c926fa0cb1",
+        "android_client_info": {
+          "package_name": "edu.uga.cs.tradeit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAuoMHqLUp0e7EZCHr-H9wK3L7MCXzdcyo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
