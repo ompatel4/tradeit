@@ -15,10 +15,12 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.firebase.ui.database.SnapshotParser;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.GenericTypeIndicator;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ServerValue;
 import java.util.HashMap;
@@ -26,7 +28,7 @@ import java.util.Map;
 
 /**
  * Views items in category desc by date (11). Buy creates pending (12). Update/delete own (9,10).
- * State saving for Story 16: Saves/restores catId on rotation.
+ * FAB for posting new item (8). State saving for Story 16: Saves/restores catId on rotation.
  */
 public class ViewItemsActivity extends AppCompatActivity {
     private RecyclerView rvItems;
@@ -49,15 +51,24 @@ public class ViewItemsActivity extends AppCompatActivity {
         rvItems = findViewById(R.id.rvItems);
         rvItems.setLayoutManager(new LinearLayoutManager(this));
 
+        // FAB for posting new item
+        FloatingActionButton fabPostItem = findViewById(R.id.fabPostItem);
+        fabPostItem.setOnClickListener(v -> {
+            Intent intent = new Intent(ViewItemsActivity.this, PostItemActivity.class);
+            intent.putExtra("CATEGORY_ID", catId);
+            startActivity(intent);
+        });
+
         Query query = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items")
                 .orderByChild("postedDate");
 
-        // Custom SnapshotParser for Map<String, Object>
+        // Custom SnapshotParser for Map<String, Object> with GenericTypeIndicator
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
             public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
-                return snapshot.getValue(Map.class);
+                GenericTypeIndicator<Map<String, Object>> indicator = new GenericTypeIndicator<Map<String, Object>>() {};
+                return snapshot.getValue(indicator);
             }
         };
 
