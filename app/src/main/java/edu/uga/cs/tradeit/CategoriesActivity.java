@@ -8,6 +8,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.PopupMenu;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -16,20 +17,24 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
+import com.firebase.ui.database.SnapshotParser;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ServerValue;
 import java.util.ArrayList;
+import java.util.Map;
 
 /**
  * Manages categories: List alpha (4), Add (5), Update (6), Delete if empty (7).
  * State saving for Story 16: Saves/restores selected category or list state on rotation/interruption.
+ * Fixed parser: Uses Map with SnapshotParser for object nodes.
  */
 public class CategoriesActivity extends AppCompatActivity {
     private RecyclerView rvCategories;
-    private FirebaseRecyclerAdapter<String, CategoryViewHolder> adapter;
+    private FirebaseRecyclerAdapter<Map<String, Object>, CategoryViewHolder> adapter;
     private FirebaseAuth mAuth = FirebaseAuth.getInstance();
     private static final String KEY_SELECTED_CAT = "selected_category";
     private static final String KEY_LIST_STATE = "list_state";
@@ -58,13 +63,26 @@ public class CategoriesActivity extends AppCompatActivity {
 
     private void setupAdapter() {
         Query query = FirebaseDatabase.getInstance().getReference("categories").orderByChild("name");
-        FirebaseRecyclerOptions<String> options = new FirebaseRecyclerOptions.Builder<String>()
-                .setQuery(query, String.class).build();
-        adapter = new FirebaseRecyclerAdapter<String, CategoryViewHolder>(options) {
+
+        // Custom SnapshotParser for Map<String, Object>
+        SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
+            @NonNull
             @Override
-            protected void onBindViewHolder(CategoryViewHolder holder, int position, @NonNull String model) {
-                holder.bind(model);
-                if (model.equals(selectedCategoryId)) {
+            public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
+                return snapshot.getValue(Map.class);
+            }
+        };
+
+        FirebaseRecyclerOptions.Builder<Map<String, Object>> optionsBuilder = new FirebaseRecyclerOptions.Builder<Map<String, Object>>();
+        optionsBuilder.setQuery(query, parser);
+        FirebaseRecyclerOptions<Map<String, Object>> options = optionsBuilder.build();
+
+        adapter = new FirebaseRecyclerAdapter<Map<String, Object>, CategoryViewHolder>(options) {
+            @Override
+            protected void onBindViewHolder(CategoryViewHolder holder, int position, @NonNull Map<String, Object> model) {
+                String catName = (String) model.get("name");
+                holder.bind(catName);
+                if (catName.equals(selectedCategoryId)) {
                     holder.itemView.setSelected(true);
                 }
             }
