@@ -8,7 +8,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">  <!-- Added NoActionBar -->
+        android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">  <!-- NoActionBar fixes Toolbar conflict -->
 
         <activity
             android:name=".LoginActivity"

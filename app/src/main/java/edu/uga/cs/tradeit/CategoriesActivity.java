@@ -22,6 +22,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.GenericTypeIndicator;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ServerValue;
 import java.util.ArrayList;
@@ -30,7 +31,7 @@ import java.util.Map;
 /**
  * Manages categories: List alpha (4), Add (5), Update (6), Delete if empty (7).
  * State saving for Story 16: Saves/restores selected category or list state on rotation/interruption.
- * Fixed parser: Uses Map with SnapshotParser for object nodes.
+ * Fixed parser: Uses GenericTypeIndicator for Map<String, Object> nodes.
  */
 public class CategoriesActivity extends AppCompatActivity {
     private RecyclerView rvCategories;
@@ -64,12 +65,13 @@ public class CategoriesActivity extends AppCompatActivity {
     private void setupAdapter() {
         Query query = FirebaseDatabase.getInstance().getReference("categories").orderByChild("name");
 
-        // Custom SnapshotParser for Map<String, Object>
+        // Custom SnapshotParser for Map<String, Object> with GenericTypeIndicator
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
             public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
-                return snapshot.getValue(Map.class);
+                GenericTypeIndicator<Map<String, Object>> indicator = new GenericTypeIndicator<Map<String, Object>>() {};
+                return snapshot.getValue(indicator);
             }
         };
 
@@ -82,7 +84,7 @@ public class CategoriesActivity extends AppCompatActivity {
             protected void onBindViewHolder(CategoryViewHolder holder, int position, @NonNull Map<String, Object> model) {
                 String catName = (String) model.get("name");
                 holder.bind(catName);
-                if (catName.equals(selectedCategoryId)) {
+                if (catName != null && catName.equals(selectedCategoryId)) {
                     holder.itemView.setSelected(true);
                 }
             }
