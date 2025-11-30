@@ -44,21 +44,54 @@ public class PostItemActivity extends AppCompatActivity {
 
     private void postItem() {
         String name = etName.getText().toString().trim();
-        String price = etPrice.getText().toString().trim().isEmpty() ? "free" : etPrice.getText().toString();
+        String price = etPrice.getText().toString().trim().isEmpty()
+                ? "free"
+                : etPrice.getText().toString().trim();
+
         if (name.isEmpty()) {
             Toast.makeText(this, "Enter item name", Toast.LENGTH_SHORT).show();
             return;
         }
-        DatabaseReference itemRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").push();
+
+        if (mAuth.getCurrentUser() == null) {
+            Toast.makeText(this, "You must be logged in to post items", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String posterUid = mAuth.getCurrentUser().getUid();
+
+        // 1) Reference to the root
+        DatabaseReference rootRef = FirebaseDatabase.getInstance().getReference();
+
+        // 2) First write: under the category (what you already had)
+        DatabaseReference catItemRef =
+                rootRef.child("categories").child(catId).child("items").push();
+
+        String key = catItemRef.getKey();
+        if (key == null) {
+            Toast.makeText(this, "Error generating item id", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         Map<String, Object> itemData = new HashMap<>();
+        itemData.put("id", key);
         itemData.put("name", name);
         itemData.put("postedDate", ServerValue.TIMESTAMP);
-        itemData.put("posterUid", mAuth.getCurrentUser().getUid());
+        itemData.put("posterUid", posterUid);
         itemData.put("price", price);
-        itemRef.setValue(itemData);
+        itemData.put("catId", catId);   // so we know what category it belongs to
+
+        // Write under the category
+        catItemRef.setValue(itemData);
+
+        // 3) Second write: mirror into /items for "My Items" and other queries
+        DatabaseReference allItemsRef = rootRef.child("items").child(key);
+        allItemsRef.setValue(itemData);
+
         Toast.makeText(this, "Item posted", Toast.LENGTH_SHORT).show();
         finish();
     }
+
 
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
