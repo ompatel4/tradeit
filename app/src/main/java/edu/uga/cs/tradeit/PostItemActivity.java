@@ -16,6 +16,7 @@ import java.util.Map;
 /**
  * Posts new item to category (Story 8).
  * State saving for Story 16: Saves/restores form inputs on rotation.
+ * Uses same ID for categories and users sections for sync.
  */
 public class PostItemActivity extends AppCompatActivity {
     private EditText etName, etPrice;
@@ -49,13 +50,26 @@ public class PostItemActivity extends AppCompatActivity {
             Toast.makeText(this, "Enter item name", Toast.LENGTH_SHORT).show();
             return;
         }
-        DatabaseReference itemRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").push();
+        String uid = mAuth.getCurrentUser().getUid();
+        DatabaseReference categoriesRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items");
+        String itemId = categoriesRef.push().getKey();  // Generate common ID
+        if (itemId == null) {
+            Toast.makeText(this, "Error generating ID", Toast.LENGTH_SHORT).show();
+            return;
+        }
         Map<String, Object> itemData = new HashMap<>();
         itemData.put("name", name);
         itemData.put("postedDate", ServerValue.TIMESTAMP);
-        itemData.put("posterUid", mAuth.getCurrentUser().getUid());
+        itemData.put("posterUid", uid);
         itemData.put("price", price);
-        itemRef.setValue(itemData);
+
+        // Set in categories with common ID
+        categoriesRef.child(itemId).setValue(itemData);
+
+        // Set in users with same ID
+        DatabaseReference usersRef = FirebaseDatabase.getInstance().getReference("users").child(uid).child("items").child(itemId);
+        usersRef.setValue(itemData);
+
         Toast.makeText(this, "Item posted", Toast.LENGTH_SHORT).show();
         finish();
     }

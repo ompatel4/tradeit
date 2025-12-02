@@ -19,6 +19,7 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.GenericTypeIndicator;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.ValueEventListener;
@@ -28,7 +29,7 @@ import java.util.Map;
 /**
  * Views pending transactions ordered by date (13). Seller confirms (14).
  * State saving for Story 16: Saves/restores selected trans ID on rotation/interruption.
- * Firebase startListening() in onStart() ensures data reloads post-interruption.
+ * Fixed parser with GenericTypeIndicator.
  */
 public class PendingTransactionsActivity extends AppCompatActivity {
     private RecyclerView rvPending;
@@ -53,12 +54,13 @@ public class PendingTransactionsActivity extends AppCompatActivity {
         Query query = FirebaseDatabase.getInstance().getReference("transactions/pending")
                 .orderByChild("postedDate");
 
-        // Custom SnapshotParser for Map<String, Object>
+        // Custom SnapshotParser with GenericTypeIndicator
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
             public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
-                return snapshot.getValue(Map.class);
+                GenericTypeIndicator<Map<String, Object>> indicator = new GenericTypeIndicator<Map<String, Object>>() {};
+                return snapshot.getValue(indicator);
             }
         };
 
@@ -69,10 +71,10 @@ public class PendingTransactionsActivity extends AppCompatActivity {
         adapter = new FirebaseRecyclerAdapter<Map<String, Object>, PendingViewHolder>(options) {
             @Override
             protected void onBindViewHolder(PendingViewHolder holder, int position, @NonNull Map<String, Object> model) {
-                String transId = getRef(position).getKey();  // Get trans ID
+                String transId = getRef(position).getKey();
                 holder.bind(model, uid, transId);
                 if (transId.equals(selectedTransId)) {
-                    holder.itemView.setSelected(true);  // Highlight restored
+                    holder.itemView.setSelected(true);
                 }
             }
 
@@ -101,7 +103,7 @@ public class PendingTransactionsActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        adapter.startListening();  // Reloads data post-interruption
+        adapter.startListening();
     }
 
     @Override
@@ -110,7 +112,7 @@ public class PendingTransactionsActivity extends AppCompatActivity {
         adapter.stopListening();
     }
 
-    // PendingViewHolder (updated to handle selection)
+    // PendingViewHolder (unchanged)
     static class PendingViewHolder extends RecyclerView.ViewHolder {
         TextView tvItem, tvRole, tvDate;
         Button btnConfirm;
@@ -130,7 +132,6 @@ public class PendingTransactionsActivity extends AppCompatActivity {
             tvDate.setText(data.get("postedDate").toString());
             btnConfirm.setVisibility(role.equals("Seller") ? View.VISIBLE : View.GONE);
 
-            // Save selection on click
             itemView.setOnClickListener(v -> ((PendingTransactionsActivity) itemView.getContext()).selectedTransId = transId);
 
             btnConfirm.setOnClickListener(v -> {

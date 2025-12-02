@@ -1,5 +1,6 @@
 package edu.uga.cs.tradeit;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -11,7 +12,6 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -20,18 +20,20 @@ import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.firebase.ui.database.SnapshotParser;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.GenericTypeIndicator;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ServerValue;
+import com.google.firebase.database.ValueEventListener;
 import java.util.ArrayList;
 import java.util.Map;
 
 /**
  * Manages categories: List alpha (4), Add (5), Update (6), Delete if empty (7).
  * State saving for Story 16: Saves/restores selected category or list state on rotation/interruption.
- * Fixed parser: Uses GenericTypeIndicator for Map<String, Object> nodes.
+ * Fixed RecyclerView inconsistency with stable IDs; full functional update/delete dialogs (6-7).
  */
 public class CategoriesActivity extends AppCompatActivity {
     private RecyclerView rvCategories;
@@ -65,7 +67,7 @@ public class CategoriesActivity extends AppCompatActivity {
     private void setupAdapter() {
         Query query = FirebaseDatabase.getInstance().getReference("categories").orderByChild("name");
 
-        // Custom SnapshotParser for Map<String, Object> with GenericTypeIndicator
+        // Custom SnapshotParser with GenericTypeIndicator for Map
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
@@ -83,10 +85,16 @@ public class CategoriesActivity extends AppCompatActivity {
             @Override
             protected void onBindViewHolder(CategoryViewHolder holder, int position, @NonNull Map<String, Object> model) {
                 String catName = (String) model.get("name");
-                holder.bind(catName);
+                String catId = getRef(position).getKey();  // Stable ID from key
+                holder.bind(catName, catId);
                 if (catName != null && catName.equals(selectedCategoryId)) {
                     holder.itemView.setSelected(true);
                 }
+            }
+
+            @Override
+            public long getItemId(int position) {
+                return getRef(position).getKey().hashCode();  // Stable IDs to fix inconsistency
             }
 
             @NonNull
@@ -96,6 +104,7 @@ public class CategoriesActivity extends AppCompatActivity {
                 return new CategoryViewHolder(view);
             }
         };
+        adapter.setHasStableIds(true);  // Fix RecyclerView inconsistency on updates/rotation
         rvCategories.setAdapter(adapter);
     }
 
@@ -114,6 +123,54 @@ public class CategoriesActivity extends AppCompatActivity {
             }
         });
         builder.show();
+    }
+
+    public void showUpdateDialog(String catId, String catName) {
+        // Full functional dialog for category update (Story 6)
+        EditText etNewName = new EditText(this);
+        etNewName.setText(catName);
+        new AlertDialog.Builder(this)
+                .setTitle("Update Category")
+                .setView(etNewName)
+                .setPositiveButton("Update", (dialog, which) -> {
+                    String newName = etNewName.getText().toString().trim();
+                    if (!newName.isEmpty()) {
+                        DatabaseReference ref = FirebaseDatabase.getInstance().getReference("categories").child(catId);
+                        ref.child("name").setValue(newName);
+                        ref.child("updatedDate").setValue(ServerValue.TIMESTAMP);
+                        Toast.makeText(this, "Category updated", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    public void showDeleteDialog(String catId) {
+        // Check empty, then full functional confirm dialog (Story 7)
+        DatabaseReference ref = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items");
+        ref.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists() && snapshot.getChildrenCount() > 0) {
+                    Toast.makeText(CategoriesActivity.this, "Cannot delete: Category not empty", Toast.LENGTH_SHORT).show();
+                } else {
+                    new AlertDialog.Builder(CategoriesActivity.this)
+                            .setTitle("Delete Category")
+                            .setMessage("Confirm delete?")
+                            .setPositiveButton("Delete", (dialog, which) -> {
+                                ref.getParent().removeValue();
+                                Toast.makeText(CategoriesActivity.this, "Category deleted", Toast.LENGTH_SHORT).show();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Toast.makeText(CategoriesActivity.this, "Error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     @Override
@@ -151,17 +208,17 @@ public class CategoriesActivity extends AppCompatActivity {
             tvName = itemView.findViewById(android.R.id.text1);
         }
 
-        void bind(String catName) {
+        void bind(String catName, String catId) {
             tvName.setText(catName);
             itemView.setOnLongClickListener(v -> {
                 PopupMenu popup = new PopupMenu(itemView.getContext(), v);
                 popup.getMenuInflater().inflate(R.menu.category_menu, popup.getMenu());
                 popup.setOnMenuItemClickListener(item -> {
                     if (item.getItemId() == R.id.action_update) {
-                        Toast.makeText(itemView.getContext(), "Update: " + catName, Toast.LENGTH_SHORT).show();
+                        ((CategoriesActivity) itemView.getContext()).showUpdateDialog(catId, catName);
                         return true;
                     } else if (item.getItemId() == R.id.action_delete) {
-                        Toast.makeText(itemView.getContext(), "Delete if empty: " + catName, Toast.LENGTH_SHORT).show();
+                        ((CategoriesActivity) itemView.getContext()).showDeleteDialog(catId);
                         return true;
                     }
                     return false;
@@ -172,7 +229,7 @@ public class CategoriesActivity extends AppCompatActivity {
             itemView.setOnClickListener(v -> {
                 ((CategoriesActivity) itemView.getContext()).selectedCategoryId = catName;
                 Intent intent = new Intent(itemView.getContext(), ViewItemsActivity.class);
-                intent.putExtra("CATEGORY_ID", catName);
+                intent.putExtra("CATEGORY_ID", catId);
                 itemView.getContext().startActivity(intent);
             });
         }

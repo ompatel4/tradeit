@@ -1,11 +1,13 @@
 package edu.uga.cs.tradeit;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
@@ -29,6 +31,7 @@ import java.util.Map;
 /**
  * Views items in category desc by date (11). Buy creates pending (12). Update/delete own (9,10).
  * FAB for posting new item (8). State saving for Story 16: Saves/restores catId on rotation.
+ * Same implementation as Categories: Key from getRef in bind, stored in holder, used in dialogs (no "invalid ID").
  */
 public class ViewItemsActivity extends AppCompatActivity {
     private RecyclerView rvItems;
@@ -51,7 +54,7 @@ public class ViewItemsActivity extends AppCompatActivity {
         rvItems = findViewById(R.id.rvItems);
         rvItems.setLayoutManager(new LinearLayoutManager(this));
 
-        // FAB for posting new item
+        // FAB for posting new item (Story 8)
         FloatingActionButton fabPostItem = findViewById(R.id.fabPostItem);
         fabPostItem.setOnClickListener(v -> {
             Intent intent = new Intent(ViewItemsActivity.this, PostItemActivity.class);
@@ -62,7 +65,7 @@ public class ViewItemsActivity extends AppCompatActivity {
         Query query = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items")
                 .orderByChild("postedDate");
 
-        // Custom SnapshotParser for Map<String, Object> with GenericTypeIndicator
+        // Custom SnapshotParser with GenericTypeIndicator
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
@@ -79,7 +82,8 @@ public class ViewItemsActivity extends AppCompatActivity {
         adapter = new FirebaseRecyclerAdapter<Map<String, Object>, ItemViewHolder>(options) {
             @Override
             protected void onBindViewHolder(ItemViewHolder holder, int position, @NonNull Map<String, Object> model) {
-                holder.bind(model, catId);
+                String itemId = getRef(position).getKey();  // Key from getRef (like Categories)
+                holder.bind(model, catId, itemId);  // Pass to holder (like Categories)
             }
 
             @NonNull
@@ -116,12 +120,13 @@ public class ViewItemsActivity extends AppCompatActivity {
         adapter.stopListening();
     }
 
-    // ItemViewHolder (unchanged)
+    // ItemViewHolder with full functional update/delete dialogs (Stories 9-10)
     static class ItemViewHolder extends RecyclerView.ViewHolder {
         TextView tvName, tvPrice, tvDate;
         Button btnBuy, btnUpdate, btnDelete;
         Map<String, Object> itemData;
-        String itemId;
+        String itemId;  // Stored from bind (like Categories catId)
+        String catId;  // Stored from bind
 
         ItemViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -133,9 +138,10 @@ public class ViewItemsActivity extends AppCompatActivity {
             btnDelete = itemView.findViewById(R.id.btnDelete);
         }
 
-        void bind(Map<String, Object> data, String catId) {
+        void bind(Map<String, Object> data, String catId, String itemId) {
             itemData = data;
-            itemId = getAdapterPosition() + "";  // Simplified ID
+            this.itemId = itemId;  // Stored (like Categories)
+            this.catId = catId;  // Stored (like Categories)
             tvName.setText((String) data.get("name"));
             tvPrice.setText((String) data.get("price"));
             tvDate.setText(data.get("postedDate").toString());
@@ -146,13 +152,9 @@ public class ViewItemsActivity extends AppCompatActivity {
             btnDelete.setVisibility(isOwn ? View.VISIBLE : View.GONE);
             btnBuy.setVisibility(isOwn ? View.GONE : View.VISIBLE);
 
-            btnBuy.setOnClickListener(v -> createPendingTransaction(catId));
-            btnUpdate.setOnClickListener(v -> Toast.makeText(itemView.getContext(), "Update item", Toast.LENGTH_SHORT).show());
-            btnDelete.setOnClickListener(v -> {
-                DatabaseReference ref = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").child(itemId);
-                ref.removeValue();
-                Toast.makeText(itemView.getContext(), "Item deleted", Toast.LENGTH_SHORT).show();
-            });
+            btnBuy.setOnClickListener(v -> createPendingTransaction(this.catId));  // Use stored
+            btnUpdate.setOnClickListener(v -> showUpdateDialog(this.catId, this.itemId));  // Use stored (like Categories)
+            btnDelete.setOnClickListener(v -> showDeleteDialog(this.catId, this.itemId));  // Use stored (like Categories)
         }
 
         private void createPendingTransaction(String catId) {
@@ -168,9 +170,73 @@ public class ViewItemsActivity extends AppCompatActivity {
             trans.put("price", itemData.get("price"));
             transRef.setValue(trans);
 
-            DatabaseReference itemRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").child(itemId);
+            DatabaseReference itemRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").child(this.itemId);
             itemRef.removeValue();
             Toast.makeText(itemView.getContext(), "Request placed", Toast.LENGTH_SHORT).show();
+        }
+
+        private void showUpdateDialog(String catId, String itemId) {
+            // Full functional dialog for item update (Story 9)
+            if (itemId == null || itemId.isEmpty()) {
+                Toast.makeText(itemView.getContext(), "Error: Invalid item ID", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            EditText etNewName = new EditText(itemView.getContext());
+            etNewName.setText((String) itemData.get("name"));
+            EditText etNewPrice = new EditText(itemView.getContext());
+            etNewPrice.setText((String) itemData.get("price"));
+            new AlertDialog.Builder(itemView.getContext())
+                    .setTitle("Update Item")
+                    .setView(etNewName)
+                    .setView(etNewPrice)
+                    .setPositiveButton("Update", (dialog, which) -> {
+                        String newName = etNewName.getText().toString().trim();
+                        String newPrice = etNewPrice.getText().toString().trim().isEmpty() ? "free" : etNewPrice.getText().toString();
+                        if (!newName.isEmpty()) {
+                            Map<String, Object> updateData = new HashMap<>();
+                            updateData.put("name", newName);
+                            updateData.put("price", newPrice);
+                            updateData.put("updatedDate", ServerValue.TIMESTAMP);
+
+                            // Update categories path
+                            DatabaseReference catRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").child(itemId);
+                            catRef.updateChildren(updateData);
+
+                            // Sync to users path with same ID
+                            String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                            DatabaseReference userRef = FirebaseDatabase.getInstance().getReference("users").child(uid).child("items").child(itemId);
+                            userRef.updateChildren(updateData);
+
+                            Toast.makeText(itemView.getContext(), "Item updated", Toast.LENGTH_SHORT).show();
+                        }
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        }
+
+        private void showDeleteDialog(String catId, String itemId) {
+            // Full functional confirm dialog for item delete (Story 10)
+            if (itemId == null || itemId.isEmpty()) {
+                Toast.makeText(itemView.getContext(), "Error: Invalid item ID", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new AlertDialog.Builder(itemView.getContext())
+                    .setTitle("Delete Item")
+                    .setMessage("Confirm delete " + itemData.get("name") + "?")
+                    .setPositiveButton("Delete", (dialog, which) -> {
+                        // Delete categories path
+                        DatabaseReference catRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items").child(itemId);
+                        catRef.removeValue();
+
+                        // Sync to users path with same ID
+                        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                        DatabaseReference userRef = FirebaseDatabase.getInstance().getReference("users").child(uid).child("items").child(itemId);
+                        userRef.removeValue();
+
+                        Toast.makeText(itemView.getContext(), "Item deleted", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
         }
     }
 }

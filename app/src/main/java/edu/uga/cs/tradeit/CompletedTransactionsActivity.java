@@ -15,13 +15,14 @@ import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.firebase.ui.database.SnapshotParser;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.GenericTypeIndicator;
 import com.google.firebase.database.Query;
 import java.util.Map;
 
 /**
  * Views completed transactions desc by date (15).
  * State saving for Story 16: Saves/restores selected trans ID on rotation/interruption.
- * Firebase startListening() in onStart() ensures data reloads post-interruption.
+ * Fixed parser with GenericTypeIndicator—no crash.
  */
 public class CompletedTransactionsActivity extends AppCompatActivity {
     private RecyclerView rvCompleted;
@@ -44,12 +45,13 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
         Query query = FirebaseDatabase.getInstance().getReference("transactions/completed")
                 .orderByChild("completionDate");
 
-        // Custom SnapshotParser for Map<String, Object>
+        // Custom SnapshotParser with GenericTypeIndicator
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
             public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
-                return snapshot.getValue(Map.class);
+                GenericTypeIndicator<Map<String, Object>> indicator = new GenericTypeIndicator<Map<String, Object>>() {};
+                return snapshot.getValue(indicator);
             }
         };
 
@@ -92,7 +94,7 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        adapter.startListening();  // Reloads data post-interruption
+        adapter.startListening();
     }
 
     @Override
@@ -101,7 +103,7 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
         adapter.stopListening();
     }
 
-    // CompletedViewHolder (reuse Pending, hide confirm)
+    // CompletedViewHolder (unchanged)
     static class CompletedViewHolder extends RecyclerView.ViewHolder {
         TextView tvItem, tvRole, tvDate;
         Button btnConfirm;  // Hidden
@@ -112,12 +114,11 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
             tvRole = itemView.findViewById(R.id.tvRole);
             tvDate = itemView.findViewById(R.id.tvDate);
             btnConfirm = itemView.findViewById(R.id.btnConfirm);
-            btnConfirm.setVisibility(View.GONE);  // Always hidden
+            btnConfirm.setVisibility(View.GONE);
         }
 
         void bind(Map<String, Object> data, String transId) {
             tvItem.setText((String) data.get("itemName"));
-            // Role from data or query
             tvRole.setText("Role: Completed");
             tvDate.setText(data.get("completionDate").toString());
 
