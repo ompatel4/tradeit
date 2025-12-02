@@ -1,158 +1,103 @@
 package edu.uga.cs.tradeit;
 
 import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.TextView;
+import android.util.Log;
 import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import com.firebase.ui.database.FirebaseRecyclerAdapter;
-import com.firebase.ui.database.FirebaseRecyclerOptions;
-import com.firebase.ui.database.SnapshotParser;
+
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
-import com.google.firebase.database.GenericTypeIndicator;
-import com.google.firebase.database.Query;
-import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.ValueEventListener;
-import java.util.HashMap;
-import java.util.Map;
 
-/**
- * Views pending transactions ordered by date (13). Seller confirms (14).
- * State saving for Story 16: Saves/restores selected trans ID on rotation/interruption.
- * Fixed parser with GenericTypeIndicator.
- */
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
 public class PendingTransactionsActivity extends AppCompatActivity {
-    private RecyclerView rvPending;
-    private FirebaseRecyclerAdapter<Map<String, Object>, PendingViewHolder> adapter;
-    private FirebaseAuth mAuth = FirebaseAuth.getInstance();
-    private static final String KEY_SELECTED_TRANS = "selected_trans_id";
 
-    private String selectedTransId;
+    private static final String TAG = "PendingTransactionsAct";
+
+    private RecyclerView recyclerView;
+    private PendingTransactionsAdapter adapter;
+    private List<PendingTransaction> pendingList = new ArrayList<>();
+
+    private FirebaseAuth mAuth;
+    private DatabaseReference pendingRef;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_pending);
-        rvPending = findViewById(R.id.rvPending);
-        rvPending.setLayoutManager(new LinearLayoutManager(this));
+        setContentView(R.layout.activity_pending_transactions);
 
-        if (savedInstanceState != null) {
-            selectedTransId = savedInstanceState.getString(KEY_SELECTED_TRANS);
+        recyclerView = findViewById(R.id.recyclerViewPending);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        adapter = new PendingTransactionsAdapter(pendingList);
+        recyclerView.setAdapter(adapter);
+
+        mAuth = FirebaseAuth.getInstance();
+        pendingRef = FirebaseDatabase.getInstance()
+                .getReference("transactions")
+                .child("pending");
+
+        loadPendingTransactions();
+    }
+
+    private void loadPendingTransactions() {
+        FirebaseUser currentUser = mAuth.getCurrentUser();
+        if (currentUser == null) {
+            Toast.makeText(this,
+                    "You must be logged in to view pending transactions",
+                    Toast.LENGTH_SHORT).show();
+            finish();
+            return;
         }
 
-        String uid = mAuth.getCurrentUser().getUid();
-        Query query = FirebaseDatabase.getInstance().getReference("transactions/pending")
-                .orderByChild("postedDate");
+        String uid = currentUser.getUid();
 
-        // Custom SnapshotParser with GenericTypeIndicator
-        SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
-            @NonNull
+        pendingRef.addValueEventListener(new ValueEventListener() {
             @Override
-            public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
-                GenericTypeIndicator<Map<String, Object>> indicator = new GenericTypeIndicator<Map<String, Object>>() {};
-                return snapshot.getValue(indicator);
-            }
-        };
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                pendingList.clear();
 
-        FirebaseRecyclerOptions.Builder<Map<String, Object>> optionsBuilder = new FirebaseRecyclerOptions.Builder<Map<String, Object>>();
-        optionsBuilder.setQuery(query, parser);
-        FirebaseRecyclerOptions<Map<String, Object>> options = optionsBuilder.build();
+                for (DataSnapshot child : snapshot.getChildren()) {
+                    PendingTransaction tx = child.getValue(PendingTransaction.class);
+                    if (tx != null) {
+                        tx.setId(child.getKey());
 
-        adapter = new FirebaseRecyclerAdapter<Map<String, Object>, PendingViewHolder>(options) {
-            @Override
-            protected void onBindViewHolder(PendingViewHolder holder, int position, @NonNull Map<String, Object> model) {
-                String transId = getRef(position).getKey();
-                holder.bind(model, uid, transId);
-                if (transId.equals(selectedTransId)) {
-                    holder.itemView.setSelected(true);
-                }
-            }
-
-            @NonNull
-            @Override
-            public PendingViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-                View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.pending_item, parent, false);
-                return new PendingViewHolder(view);
-            }
-        };
-        rvPending.setAdapter(adapter);
-    }
-
-    @Override
-    protected void onSaveInstanceState(@NonNull Bundle outState) {
-        super.onSaveInstanceState(outState);
-        outState.putString(KEY_SELECTED_TRANS, selectedTransId);
-    }
-
-    @Override
-    protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
-        super.onRestoreInstanceState(savedInstanceState);
-        selectedTransId = savedInstanceState.getString(KEY_SELECTED_TRANS);
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        adapter.startListening();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        adapter.stopListening();
-    }
-
-    // PendingViewHolder (unchanged)
-    static class PendingViewHolder extends RecyclerView.ViewHolder {
-        TextView tvItem, tvRole, tvDate;
-        Button btnConfirm;
-
-        PendingViewHolder(@NonNull View itemView) {
-            super(itemView);
-            tvItem = itemView.findViewById(R.id.tvItemName);
-            tvRole = itemView.findViewById(R.id.tvRole);
-            tvDate = itemView.findViewById(R.id.tvDate);
-            btnConfirm = itemView.findViewById(R.id.btnConfirm);
-        }
-
-        void bind(Map<String, Object> data, String uid, String transId) {
-            tvItem.setText((String) data.get("itemName"));
-            String role = ((String) data.get("buyerUid")).equals(uid) ? "Buyer" : "Seller";
-            tvRole.setText("Role: " + role);
-            tvDate.setText(data.get("postedDate").toString());
-            btnConfirm.setVisibility(role.equals("Seller") ? View.VISIBLE : View.GONE);
-
-            itemView.setOnClickListener(v -> ((PendingTransactionsActivity) itemView.getContext()).selectedTransId = transId);
-
-            btnConfirm.setOnClickListener(v -> {
-                DatabaseReference pendingRef = FirebaseDatabase.getInstance().getReference("transactions/pending").child(transId);
-                DatabaseReference completedRef = FirebaseDatabase.getInstance().getReference("transactions/completed").child(transId);
-                pendingRef.addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        Map<String, Object> completed = new HashMap<>((Map) snapshot.getValue());
-                        completed.put("completionDate", ServerValue.TIMESTAMP);
-                        completedRef.setValue(completed);
-                        pendingRef.removeValue();
-                        Toast.makeText(itemView.getContext(), "Confirmed", Toast.LENGTH_SHORT).show();
+                        // include if I'm buyer OR seller
+                        if (uid.equals(tx.getBuyerUid()) || uid.equals(tx.getSellerUid())) {
+                            pendingList.add(tx);
+                        }
                     }
+                }
 
+                // sort by postedDate: newest → oldest
+                Collections.sort(pendingList, new Comparator<PendingTransaction>() {
                     @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Toast.makeText(itemView.getContext(), "Error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+                    public int compare(PendingTransaction o1, PendingTransaction o2) {
+                        return Long.compare(o2.getPostedDate(), o1.getPostedDate());
                     }
                 });
-            });
-        }
+
+                adapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "loadPendingTransactions:onCancelled", error.toException());
+                Toast.makeText(PendingTransactionsActivity.this,
+                        "Failed to load: " + error.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 }
