@@ -45,34 +45,54 @@ public class PostItemActivity extends AppCompatActivity {
 
     private void postItem() {
         String name = etName.getText().toString().trim();
-        String price = etPrice.getText().toString().trim().isEmpty() ? "free" : etPrice.getText().toString();
+        String price = etPrice.getText().toString().trim().isEmpty()
+                ? "free"
+                : etPrice.getText().toString().trim();
+
         if (name.isEmpty()) {
             Toast.makeText(this, "Enter item name", Toast.LENGTH_SHORT).show();
             return;
         }
+
         String uid = mAuth.getCurrentUser().getUid();
-        DatabaseReference categoriesRef = FirebaseDatabase.getInstance().getReference("categories").child(catId).child("items");
-        String itemId = categoriesRef.push().getKey();  // Generate common ID
+
+        FirebaseDatabase db = FirebaseDatabase.getInstance();
+        DatabaseReference rootRef = db.getReference();
+
+        // 1) Write under categories/{catId}/items
+        DatabaseReference catRef = rootRef.child("categories")
+                .child(catId)
+                .child("items");
+
+        String itemId = catRef.push().getKey();
         if (itemId == null) {
             Toast.makeText(this, "Error generating ID", Toast.LENGTH_SHORT).show();
             return;
         }
+
         Map<String, Object> itemData = new HashMap<>();
+        itemData.put("id", itemId);
         itemData.put("name", name);
         itemData.put("postedDate", ServerValue.TIMESTAMP);
         itemData.put("posterUid", uid);
         itemData.put("price", price);
+        itemData.put("catId", catId);   // 🔥 REQUIRED FOR UPDATING/DELETING FROM MY ITEMS
 
-        // Set in categories with common ID
-        categoriesRef.child(itemId).setValue(itemData);
+        // Save to categories
+        catRef.child(itemId).setValue(itemData);
 
-        // Set in users with same ID
-        DatabaseReference usersRef = FirebaseDatabase.getInstance().getReference("users").child(uid).child("items").child(itemId);
-        usersRef.setValue(itemData);
+        // 2) ALSO save a copy for the user
+        DatabaseReference userItemRef = rootRef.child("users")
+                .child(uid)
+                .child("items")
+                .child(itemId);
+
+        userItemRef.setValue(itemData);
 
         Toast.makeText(this, "Item posted", Toast.LENGTH_SHORT).show();
         finish();
     }
+
 
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
