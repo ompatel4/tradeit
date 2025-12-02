@@ -6,8 +6,9 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
-import android.widget.PopupMenu;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -29,11 +30,17 @@ import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.ValueEventListener;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Manages categories: List alpha (4), Add (5), Update (6), Delete if empty (7).
- * State saving for Story 16.
+ * Categories:
+ *  - View list alphabetically (4)
+ *  - Add category (5)
+ *  - Update own category (6)
+ *  - Delete own category if empty (7)
+ *  - Click category -> view items (11)
+ *  - Saves basic state on rotation (16)
  */
 public class CategoriesActivity extends AppCompatActivity {
 
@@ -44,9 +51,7 @@ public class CategoriesActivity extends AppCompatActivity {
     private static final String KEY_SELECTED_CAT = "selected_category";
     private static final String KEY_LIST_STATE = "list_state";
 
-    // NOTE: despite the name, this is actually storing the selected *name*,
-    // not the ID, in your current logic – leaving as-is to avoid breaking behavior.
-    String selectedCategoryId;
+    String selectedCategoryId;   // so ViewHolder can update it
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,9 +63,8 @@ public class CategoriesActivity extends AppCompatActivity {
 
         if (savedInstanceState != null) {
             selectedCategoryId = savedInstanceState.getString(KEY_SELECTED_CAT);
-            ArrayList<String> savedList =
-                    savedInstanceState.getStringArrayList(KEY_LIST_STATE);
-            // We’re letting Firebase repopulate; no manual restore of list needed.
+            ArrayList<String> savedList = savedInstanceState.getStringArrayList(KEY_LIST_STATE);
+            // Firebase will reload live data; savedList is not strictly needed here
         }
 
         setupAdapter();
@@ -73,16 +77,16 @@ public class CategoriesActivity extends AppCompatActivity {
                 .getReference("categories")
                 .orderByChild("name");
 
-        SnapshotParser<Map<String, Object>> parser =
-                new SnapshotParser<Map<String, Object>>() {
-                    @NonNull
-                    @Override
-                    public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
-                        GenericTypeIndicator<Map<String, Object>> indicator =
-                                new GenericTypeIndicator<Map<String, Object>>() {};
-                        return snapshot.getValue(indicator);
-                    }
-                };
+        SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
+            @NonNull
+            @Override
+            public Map<String, Object> parseSnapshot(@NonNull DataSnapshot snapshot) {
+                GenericTypeIndicator<Map<String, Object>> indicator =
+                        new GenericTypeIndicator<Map<String, Object>>() {};
+                Map<String, Object> value = snapshot.getValue(indicator);
+                return value != null ? value : new HashMap<>();
+            }
+        };
 
         FirebaseRecyclerOptions<Map<String, Object>> options =
                 new FirebaseRecyclerOptions.Builder<Map<String, Object>>()
@@ -96,11 +100,12 @@ public class CategoriesActivity extends AppCompatActivity {
                                             @NonNull Map<String, Object> model) {
                 String catName = (String) model.get("name");
                 String catId = getRef(position).getKey();
+                String creatorUid = (String) model.get("creatorUid");
 
-                holder.bind(catName, catId);
+                holder.bind(catName, catId, creatorUid);
 
-                // simple “selected” highlight logic; you can remove if not needed
-                if (catName != null && catName.equals(selectedCategoryId)) {
+                // simple selection highlight if you want
+                if (catId != null && catId.equals(selectedCategoryId)) {
                     holder.itemView.setSelected(true);
                 } else {
                     holder.itemView.setSelected(false);
@@ -109,72 +114,80 @@ public class CategoriesActivity extends AppCompatActivity {
 
             @NonNull
             @Override
-            public CategoryViewHolder onCreateViewHolder(@NonNull ViewGroup parent,
-                                                         int viewType) {
+            public CategoryViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
                 View view = LayoutInflater.from(parent.getContext())
-                        .inflate(android.R.layout.simple_list_item_1, parent, false);
+                        .inflate(R.layout.item_category, parent, false);
                 return new CategoryViewHolder(view);
             }
         };
-
-        // IMPORTANT: do NOT use stable IDs with FirebaseRecyclerAdapter –
-        // that’s what was causing the IndexOutOfBounds crash.
-        // adapter.setHasStableIds(true);  <-- removed
 
         rvCategories.setAdapter(adapter);
     }
 
     private void showAddDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
         EditText etName = new EditText(this);
-        builder.setView(etName);
-        builder.setTitle("Add Category")
+        etName.setHint("Category name");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Add Category")
+                .setView(etName)
                 .setPositiveButton("Add", (dialog, which) -> {
                     String name = etName.getText().toString().trim();
-                    if (!name.isEmpty()) {
-                        DatabaseReference ref =
-                                FirebaseDatabase.getInstance()
-                                        .getReference("categories")
-                                        .push();
-                        ref.child("name").setValue(name);
-                        ref.child("createdDate").setValue(ServerValue.TIMESTAMP);
-                        ref.child("creatorUid").setValue(mAuth.getCurrentUser().getUid());
-                        ref.child("items").setValue(null);
+                    if (name.isEmpty()) {
+                        Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show();
+                        return;
                     }
+
+                    DatabaseReference ref = FirebaseDatabase.getInstance()
+                            .getReference("categories")
+                            .push();
+
+                    ref.child("name").setValue(name);
+                    ref.child("createdDate").setValue(ServerValue.TIMESTAMP);
+                    ref.child("creatorUid").setValue(mAuth.getCurrentUser().getUid());
+                    // optional: init items node
+                    ref.child("items").setValue(null);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    public void showUpdateDialog(String catId, String catName) {
+    // Update category name (owner only)
+    public void showUpdateDialog(String catId, String oldName) {
         EditText etNewName = new EditText(this);
-        etNewName.setText(catName);
+        etNewName.setText(oldName);
 
         new AlertDialog.Builder(this)
                 .setTitle("Update Category")
                 .setView(etNewName)
                 .setPositiveButton("Update", (dialog, which) -> {
                     String newName = etNewName.getText().toString().trim();
-                    if (!newName.isEmpty()) {
-                        DatabaseReference ref =
-                                FirebaseDatabase.getInstance()
-                                        .getReference("categories")
-                                        .child(catId);
-                        ref.child("name").setValue(newName);
-                        ref.child("updatedDate").setValue(ServerValue.TIMESTAMP);
-                        Toast.makeText(this, "Category updated", Toast.LENGTH_SHORT).show();
+                    if (newName.isEmpty()) {
+                        Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show();
+                        return;
                     }
+
+                    DatabaseReference ref = FirebaseDatabase.getInstance()
+                            .getReference("categories")
+                            .child(catId);
+
+                    Map<String, Object> updates = new HashMap<>();
+                    updates.put("name", newName);
+                    updates.put("updatedDate", ServerValue.TIMESTAMP);
+                    ref.updateChildren(updates);
+
+                    Toast.makeText(this, "Category updated", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
+    // Delete allowed only if category has no items (owner only)
     public void showDeleteDialog(String catId) {
-        DatabaseReference itemsRef =
-                FirebaseDatabase.getInstance()
-                        .getReference("categories")
-                        .child(catId)
-                        .child("items");
+        DatabaseReference itemsRef = FirebaseDatabase.getInstance()
+                .getReference("categories")
+                .child(catId)
+                .child("items");
 
         itemsRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
@@ -186,12 +199,11 @@ public class CategoriesActivity extends AppCompatActivity {
                 } else {
                     new AlertDialog.Builder(CategoriesActivity.this)
                             .setTitle("Delete Category")
-                            .setMessage("Confirm delete?")
+                            .setMessage("Delete this category?")
                             .setPositiveButton("Delete", (dialog, which) -> {
                                 itemsRef.getParent().removeValue();
                                 Toast.makeText(CategoriesActivity.this,
-                                        "Category deleted",
-                                        Toast.LENGTH_SHORT).show();
+                                        "Category deleted", Toast.LENGTH_SHORT).show();
                             })
                             .setNegativeButton("Cancel", null)
                             .show();
@@ -218,7 +230,7 @@ public class CategoriesActivity extends AppCompatActivity {
     protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
         selectedCategoryId = savedInstanceState.getString(KEY_SELECTED_CAT);
-        // Do NOT recreate adapter here – it’s already set up in onCreate.
+        // adapter will rebind and apply selection
     }
 
     @Override
@@ -237,43 +249,66 @@ public class CategoriesActivity extends AppCompatActivity {
         }
     }
 
+    // ------------------------
+    // ViewHolder for categories
+    // ------------------------
     static class CategoryViewHolder extends RecyclerView.ViewHolder {
+        TextView tvName;
+        Button btnEdit, btnDelete;
 
-        android.widget.TextView tvName;
+        String catId;
+        String creatorUid;
+        String catName;
 
         CategoryViewHolder(@NonNull View itemView) {
             super(itemView);
-            tvName = itemView.findViewById(android.R.id.text1);
+            tvName = itemView.findViewById(R.id.textViewCategoryName);
+            btnEdit = itemView.findViewById(R.id.buttonEditCategory);
+            btnDelete = itemView.findViewById(R.id.buttonDeleteCategory);
         }
 
-        void bind(String catName, String catId) {
-            tvName.setText(catName);
+        void bind(String catName, String catId, String creatorUid) {
+            this.catName = catName;
+            this.catId = catId;
+            this.creatorUid = creatorUid;
 
-            itemView.setOnLongClickListener(v -> {
-                PopupMenu popup = new PopupMenu(itemView.getContext(), v);
-                popup.getMenuInflater().inflate(R.menu.category_menu, popup.getMenu());
-                popup.setOnMenuItemClickListener(item -> {
-                    if (item.getItemId() == R.id.action_update) {
-                        ((CategoriesActivity) itemView.getContext())
-                                .showUpdateDialog(catId, catName);
-                        return true;
-                    } else if (item.getItemId() == R.id.action_delete) {
-                        ((CategoriesActivity) itemView.getContext())
-                                .showDeleteDialog(catId);
-                        return true;
-                    }
-                    return false;
-                });
-                popup.show();
-                return true;
-            });
+            tvName.setText(catName != null ? catName : "(no name)");
 
+            // Tap row -> open items in that category
             itemView.setOnClickListener(v -> {
-                ((CategoriesActivity) itemView.getContext()).selectedCategoryId = catName;
+                CategoriesActivity activity = (CategoriesActivity) itemView.getContext();
+                activity.selectedCategoryId = catId;
+
                 Intent intent = new Intent(itemView.getContext(), ViewItemsActivity.class);
                 intent.putExtra("CATEGORY_ID", catId);
                 itemView.getContext().startActivity(intent);
             });
+
+            // Only category owner sees Edit/Delete
+            String currentUid = FirebaseAuth.getInstance().getCurrentUser() != null
+                    ? FirebaseAuth.getInstance().getCurrentUser().getUid()
+                    : null;
+            boolean isOwner = creatorUid != null && creatorUid.equals(currentUid);
+
+            if (isOwner) {
+                btnEdit.setVisibility(View.VISIBLE);
+                btnDelete.setVisibility(View.VISIBLE);
+
+                btnEdit.setOnClickListener(v -> {
+                    CategoriesActivity activity = (CategoriesActivity) itemView.getContext();
+                    activity.showUpdateDialog(catId, catName);
+                });
+
+                btnDelete.setOnClickListener(v -> {
+                    CategoriesActivity activity = (CategoriesActivity) itemView.getContext();
+                    activity.showDeleteDialog(catId);
+                });
+            } else {
+                btnEdit.setVisibility(View.GONE);
+                btnDelete.setVisibility(View.GONE);
+                btnEdit.setOnClickListener(null);
+                btnDelete.setOnClickListener(null);
+            }
         }
     }
 }
