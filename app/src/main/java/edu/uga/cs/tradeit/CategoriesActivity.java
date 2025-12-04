@@ -46,7 +46,7 @@ public class CategoriesActivity extends AppCompatActivity {
 
     private RecyclerView rvCategories;
     private FirebaseRecyclerAdapter<Map<String, Object>, CategoryViewHolder> adapter;
-    private FirebaseAuth mAuth = FirebaseAuth.getInstance();
+    private final FirebaseAuth mAuth = FirebaseAuth.getInstance();
 
     private static final String KEY_SELECTED_CAT = "selected_category";
     private static final String KEY_LIST_STATE = "list_state";
@@ -60,6 +60,8 @@ public class CategoriesActivity extends AppCompatActivity {
 
         rvCategories = findViewById(R.id.rvCategories);
         rvCategories.setLayoutManager(new LinearLayoutManager(this));
+        // Match ViewItemsActivity: disable item animations to avoid inconsistency crashes
+        rvCategories.setItemAnimator(null);
 
         if (savedInstanceState != null) {
             selectedCategoryId = savedInstanceState.getString(KEY_SELECTED_CAT);
@@ -119,6 +121,8 @@ public class CategoriesActivity extends AppCompatActivity {
                         .inflate(R.layout.item_category, parent, false);
                 return new CategoryViewHolder(view);
             }
+
+            // IMPORTANT: no getItemId override, no stable IDs
         };
 
         rvCategories.setAdapter(adapter);
@@ -246,6 +250,15 @@ public class CategoriesActivity extends AppCompatActivity {
         super.onStop();
         if (adapter != null) {
             adapter.stopListening();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Extra safety: detach adapter when Activity is destroyed
+        if (rvCategories != null) {
+            rvCategories.setAdapter(null);
         }
     }
 

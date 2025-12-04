@@ -34,9 +34,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * View items in a category (Story 11), post new item (8),
- * buy/accept (12), update/delete own items (9,10).
- * Handles rotation (16) and avoids RecyclerView inconsistency crashes.
+ * View items in a category, post new item, buy/update/delete, etc.
+ * This version is conservative with RecyclerView + Firebase to avoid
+ * "Inconsistency detected" crashes, especially on back navigation.
  */
 public class ViewItemsActivity extends AppCompatActivity {
 
@@ -66,11 +66,11 @@ public class ViewItemsActivity extends AppCompatActivity {
 
         rvItems = findViewById(R.id.rvItems);
         rvItems.setLayoutManager(new LinearLayoutManager(this));
+        // Disable default item animations – they often cause issues
+        rvItems.setItemAnimator(null);
 
-        // FAB to post a new item into this category (Story 8)
         FloatingActionButton fabPostItem = findViewById(R.id.fabPostItem);
         fabPostItem.setOnClickListener(v -> {
-            // Simple: go to PostItemActivity with CATEGORY_ID
             android.content.Intent intent =
                     new android.content.Intent(ViewItemsActivity.this, PostItemActivity.class);
             intent.putExtra("CATEGORY_ID", catId);
@@ -85,9 +85,8 @@ public class ViewItemsActivity extends AppCompatActivity {
                 .getReference("categories")
                 .child(catId)
                 .child("items")
-                .orderByChild("postedDate"); // newest to oldest if reversed in adapter, but OK for now
+                .orderByChild("postedDate");
 
-        // Parse each snapshot as a Map<String, Object>
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
@@ -110,7 +109,7 @@ public class ViewItemsActivity extends AppCompatActivity {
             protected void onBindViewHolder(@NonNull ItemViewHolder holder,
                                             int position,
                                             @NonNull Map<String, Object> model) {
-                String itemId = getRef(position).getKey(); // stable key from Firebase
+                String itemId = getRef(position).getKey();
                 holder.bind(model, catId, itemId);
             }
 
@@ -122,15 +121,9 @@ public class ViewItemsActivity extends AppCompatActivity {
                 return new ItemViewHolder(view);
             }
 
-            @Override
-            public long getItemId(int position) {
-                // Stable IDs to help RecyclerView when Firebase data changes
-                String key = getRef(position).getKey();
-                return key != null ? key.hashCode() : RecyclerView.NO_ID;
-            }
+            // NOTE: no getItemId override, no stable IDs for items
         };
 
-        adapter.setHasStableIds(true);
         rvItems.setAdapter(adapter);
     }
 
@@ -144,7 +137,6 @@ public class ViewItemsActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         if (adapter != null) {
-            rvItems.setAdapter(adapter);
             adapter.startListening();
         }
     }
@@ -154,8 +146,27 @@ public class ViewItemsActivity extends AppCompatActivity {
         super.onStop();
         if (adapter != null) {
             adapter.stopListening();
-            rvItems.setAdapter(null);  // detach to avoid "Inconsistency detected"
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Last line of defense: fully detach adapter when Activity is destroyed
+        if (rvItems != null) {
+            rvItems.setAdapter(null);
+        }
+    }
+
+    // The key bit for your crash: make back explicitly detach the adapter
+    @Override
+    public void onBackPressed() {
+        if (adapter != null) {
+            adapter.stopListening();
+            rvItems.setAdapter(null);
+            adapter = null;
+        }
+        super.onBackPressed();
     }
 
     // -----------------------
@@ -184,18 +195,15 @@ public class ViewItemsActivity extends AppCompatActivity {
             this.catId = catId;
             this.itemId = itemId;
 
-            // Name
             String name = (String) data.get("name");
             tvName.setText(name != null ? name : "(no name)");
 
-            // Price (string stored in DB: "free" or "34.99")
             String price = (String) data.get("price");
             if (price == null || price.isEmpty()) {
                 price = "free";
             }
             tvPrice.setText(price);
 
-            // Date
             Object tsObj = data.get("postedDate");
             if (tsObj instanceof Long) {
                 Date d = new Date((Long) tsObj);
@@ -204,7 +212,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                 tvDate.setText("n/a");
             }
 
-            // Show/hide buttons depending on owner
             String posterUid = (String) data.get("posterUid");
             FirebaseAuth mAuth = FirebaseAuth.getInstance();
             String currentUid = mAuth.getCurrentUser() != null
@@ -216,13 +223,11 @@ public class ViewItemsActivity extends AppCompatActivity {
             btnDelete.setVisibility(isOwn ? View.VISIBLE : View.GONE);
             btnBuy.setVisibility(isOwn ? View.GONE : View.VISIBLE);
 
-            // Click listeners
             btnBuy.setOnClickListener(v -> createPendingTransaction());
             btnUpdate.setOnClickListener(v -> showUpdateDialog());
             btnDelete.setOnClickListener(v -> showDeleteDialog());
         }
 
-        // Story 12: create pending transaction and remove from category
         private void createPendingTransaction() {
             String buyerUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
             String sellerUid = (String) itemData.get("posterUid");
@@ -242,7 +247,6 @@ public class ViewItemsActivity extends AppCompatActivity {
 
             transRef.setValue(trans);
 
-            // Remove item from category
             if (itemId != null) {
                 DatabaseReference itemRef = FirebaseDatabase.getInstance()
                         .getReference("categories")
@@ -255,14 +259,12 @@ public class ViewItemsActivity extends AppCompatActivity {
             Toast.makeText(itemView.getContext(), "Request placed", Toast.LENGTH_SHORT).show();
         }
 
-        // Story 9: update own item (name + price)
         private void showUpdateDialog() {
             if (itemId == null || itemId.isEmpty()) {
                 Toast.makeText(itemView.getContext(), "Error: Invalid item ID", Toast.LENGTH_SHORT).show();
                 return;
             }
 
-            // Build a small vertical layout with two EditTexts (no extra XML needed)
             LinearLayout layout = new LinearLayout(itemView.getContext());
             layout.setOrientation(LinearLayout.VERTICAL);
             int padding = (int) (16 * itemView.getResources().getDisplayMetrics().density);
@@ -300,7 +302,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                         updateData.put("price", newPrice);
                         updateData.put("updatedDate", ServerValue.TIMESTAMP);
 
-                        // Update in categories path
                         DatabaseReference catRef = FirebaseDatabase.getInstance()
                                 .getReference("categories")
                                 .child(catId)
@@ -308,7 +309,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                                 .child(itemId);
                         catRef.updateChildren(updateData);
 
-                        // Update in users path (if you keep a mirror there)
                         String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
                         DatabaseReference userRef = FirebaseDatabase.getInstance()
                                 .getReference("users")
@@ -324,7 +324,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                     .show();
         }
 
-        // Story 10: delete own item
         private void showDeleteDialog() {
             if (itemId == null || itemId.isEmpty()) {
                 Toast.makeText(itemView.getContext(), "Error: Invalid item ID", Toast.LENGTH_SHORT).show();
@@ -335,7 +334,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                     .setTitle("Delete Item")
                     .setMessage("Delete \"" + itemData.get("name") + "\"?")
                     .setPositiveButton("Delete", (dialog, which) -> {
-                        // Delete from categories path
                         DatabaseReference catRef = FirebaseDatabase.getInstance()
                                 .getReference("categories")
                                 .child(catId)
@@ -343,7 +341,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                                 .child(itemId);
                         catRef.removeValue();
 
-                        // Delete from users path (if mirrored there)
                         String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
                         DatabaseReference userRef = FirebaseDatabase.getInstance()
                                 .getReference("users")
