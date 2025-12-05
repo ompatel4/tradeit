@@ -27,14 +27,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Views pending transactions ordered by date (13). Seller confirms (14).
- * State saving for Story 16: Saves/restores selected trans ID on rotation/interruption.
- * Fixed parser with GenericTypeIndicator.
+ * This is the activity for the pending transactions. It shows each transaction
+ * for the seller and the buyer. It also gives the option for the seller to confirm the
+ * transaction to move the record to completed.
  */
 public class PendingTransactionsActivity extends AppCompatActivity {
+    // Recyler for the list of pending transactions
     private RecyclerView rvPending;
     private FirebaseRecyclerAdapter<Map<String, Object>, PendingViewHolder> adapter;
+    // Current user
     private FirebaseAuth mAuth = FirebaseAuth.getInstance();
+    // The key for saving the selected transaction
     private static final String KEY_SELECTED_TRANS = "selected_trans_id";
 
     private String selectedTransId;
@@ -46,15 +49,18 @@ public class PendingTransactionsActivity extends AppCompatActivity {
         rvPending = findViewById(R.id.rvPending);
         rvPending.setLayoutManager(new LinearLayoutManager(this));
 
+        // This will restore the transactions after configuration change
         if (savedInstanceState != null) {
             selectedTransId = savedInstanceState.getString(KEY_SELECTED_TRANS);
         }
 
         String uid = mAuth.getCurrentUser().getUid();
+
+        // This will query all the pending transactions
         Query query = FirebaseDatabase.getInstance().getReference("transactions/pending")
                 .orderByChild("postedDate");
 
-        // Custom SnapshotParser with GenericTypeIndicator
+        // This is used to convert the data into a Map
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
@@ -68,11 +74,13 @@ public class PendingTransactionsActivity extends AppCompatActivity {
         optionsBuilder.setQuery(query, parser);
         FirebaseRecyclerOptions<Map<String, Object>> options = optionsBuilder.build();
 
+        // This will auto wire the Firebase data to the PendingViewHolder rows
         adapter = new FirebaseRecyclerAdapter<Map<String, Object>, PendingViewHolder>(options) {
             @Override
             protected void onBindViewHolder(PendingViewHolder holder, int position, @NonNull Map<String, Object> model) {
                 String transId = getRef(position).getKey();
                 holder.bind(model, uid, transId);
+
                 if (transId.equals(selectedTransId)) {
                     holder.itemView.setSelected(true);
                 }
@@ -112,7 +120,7 @@ public class PendingTransactionsActivity extends AppCompatActivity {
         adapter.stopListening();
     }
 
-    // PendingViewHolder (unchanged)
+    // This is the View holder for each pending transaction row, it will show the description of each transaction
     static class PendingViewHolder extends RecyclerView.ViewHolder {
         TextView tvItem, tvRole, tvDate;
         Button btnConfirm;
@@ -125,6 +133,7 @@ public class PendingTransactionsActivity extends AppCompatActivity {
             btnConfirm = itemView.findViewById(R.id.btnConfirm);
         }
 
+        // This is used to bind one transaction to the row whether that be for the buyer or the seller
         void bind(Map<String, Object> data, String uid, String transId) {
             tvItem.setText((String) data.get("itemName"));
             String role = ((String) data.get("buyerUid")).equals(uid) ? "Buyer" : "Seller";

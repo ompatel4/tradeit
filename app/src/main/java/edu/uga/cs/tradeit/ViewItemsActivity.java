@@ -34,9 +34,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * View items in a category, post new item, buy/update/delete, etc.
- * This version is conservative with RecyclerView + Firebase to avoid
- * "Inconsistency detected" crashes, especially on back navigation.
+ * This is responsible for displaying all the items inside a selceted category.
+ *
+ * It ensures that it loads items sorted by postedDate, allows the users to post new items,
+ * allow the items owners to update/delete their own items, and allow buyers to either buy or accept
+ * the item.
  */
 public class ViewItemsActivity extends AppCompatActivity {
 
@@ -50,8 +52,6 @@ public class ViewItemsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_view_items);
-
-        // Restore category id after rotation, otherwise read from Intent
         if (savedInstanceState != null) {
             catId = savedInstanceState.getString(KEY_CAT_ID);
         } else {
@@ -66,9 +66,9 @@ public class ViewItemsActivity extends AppCompatActivity {
 
         rvItems = findViewById(R.id.rvItems);
         rvItems.setLayoutManager(new LinearLayoutManager(this));
-        // Disable default item animations – they often cause issues
         rvItems.setItemAnimator(null);
 
+        // A floating button to post a new item
         FloatingActionButton fabPostItem = findViewById(R.id.fabPostItem);
         fabPostItem.setOnClickListener(v -> {
             android.content.Intent intent =
@@ -80,6 +80,7 @@ public class ViewItemsActivity extends AppCompatActivity {
         setupAdapter();
     }
 
+    // This sets up the FirebaseRecylerApapter to properly read the data in categories.
     private void setupAdapter() {
         Query query = FirebaseDatabase.getInstance()
                 .getReference("categories")
@@ -87,6 +88,7 @@ public class ViewItemsActivity extends AppCompatActivity {
                 .child("items")
                 .orderByChild("postedDate");
 
+        // Used to parse each snapshot into a simple map.
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
@@ -109,6 +111,7 @@ public class ViewItemsActivity extends AppCompatActivity {
             protected void onBindViewHolder(@NonNull ItemViewHolder holder,
                                             int position,
                                             @NonNull Map<String, Object> model) {
+                // THe Firebase key for the specific item
                 String itemId = getRef(position).getKey();
                 holder.bind(model, catId, itemId);
             }
@@ -120,8 +123,6 @@ public class ViewItemsActivity extends AppCompatActivity {
                         .inflate(R.layout.item_layout, parent, false);
                 return new ItemViewHolder(view);
             }
-
-            // NOTE: no getItemId override, no stable IDs for items
         };
 
         rvItems.setAdapter(adapter);
@@ -152,13 +153,12 @@ public class ViewItemsActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Last line of defense: fully detach adapter when Activity is destroyed
         if (rvItems != null) {
             rvItems.setAdapter(null);
         }
     }
 
-    // The key bit for your crash: make back explicitly detach the adapter
+    // Detaches when the back button is pressed.
     @Override
     public void onBackPressed() {
         if (adapter != null) {
@@ -169,9 +169,7 @@ public class ViewItemsActivity extends AppCompatActivity {
         super.onBackPressed();
     }
 
-    // -----------------------
-    // ViewHolder for each item
-    // -----------------------
+    // This is the ViewHolder for each item and populates each row with the specif data.
     static class ItemViewHolder extends RecyclerView.ViewHolder {
         TextView tvName, tvPrice, tvDate;
         Button btnBuy, btnUpdate, btnDelete;
@@ -228,6 +226,7 @@ public class ViewItemsActivity extends AppCompatActivity {
             btnDelete.setOnClickListener(v -> showDeleteDialog());
         }
 
+        // Resposible for creating a pending transaction and removing the item from the category.
         private void createPendingTransaction() {
             String buyerUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
             String sellerUid = (String) itemData.get("posterUid");
@@ -238,15 +237,17 @@ public class ViewItemsActivity extends AppCompatActivity {
                     .push();
 
             Map<String, Object> trans = new HashMap<>();
-            trans.put("buyerUid", buyerUid);
-            trans.put("sellerUid", sellerUid);
-            trans.put("itemName", itemData.get("name"));
-            trans.put("catId", catId);
-            trans.put("postedDate", ServerValue.TIMESTAMP);
-            trans.put("price", itemData.get("price"));
+            trans.put("buyerUid", buyerUid); // Buyer ID
+            trans.put("sellerUid", sellerUid); // Seller ID
+            trans.put("itemName", itemData.get("name")); // Item
+            trans.put("catId", catId); // Category ID
+            trans.put("postedDate", ServerValue.TIMESTAMP); // When its posted
+            trans.put("price", itemData.get("price")); // Price
 
+            // Saves the transaction
             transRef.setValue(trans);
 
+            // Removes it from the category list
             if (itemId != null) {
                 DatabaseReference itemRef = FirebaseDatabase.getInstance()
                         .getReference("categories")
@@ -259,12 +260,14 @@ public class ViewItemsActivity extends AppCompatActivity {
             Toast.makeText(itemView.getContext(), "Request placed", Toast.LENGTH_SHORT).show();
         }
 
+        // Pulls up dialog allowing the items owner to update it
         private void showUpdateDialog() {
             if (itemId == null || itemId.isEmpty()) {
                 Toast.makeText(itemView.getContext(), "Error: Invalid item ID", Toast.LENGTH_SHORT).show();
                 return;
             }
 
+            // Builds the layout
             LinearLayout layout = new LinearLayout(itemView.getContext());
             layout.setOrientation(LinearLayout.VERTICAL);
             int padding = (int) (16 * itemView.getResources().getDisplayMetrics().density);
@@ -324,6 +327,7 @@ public class ViewItemsActivity extends AppCompatActivity {
                     .show();
         }
 
+        // Deletes the item from both categories and the user that owns it
         private void showDeleteDialog() {
             if (itemId == null || itemId.isEmpty()) {
                 Toast.makeText(itemView.getContext(), "Error: Invalid item ID", Toast.LENGTH_SHORT).show();
