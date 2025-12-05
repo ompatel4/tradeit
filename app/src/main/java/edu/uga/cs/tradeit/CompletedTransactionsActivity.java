@@ -25,11 +25,9 @@ import com.google.firebase.database.Query;
 import java.util.Map;
 
 /**
- * Views completed transactions in date order (Story 15).
- * Each user only sees their own completed transactions:
- *   where buyerUid == currentUser or sellerUid == currentUser.
- * Keeps selected transaction ID across rotation (Story 16).
+ * CompletedTransactionsActivity displays user's completed transactions
  */
+
 public class CompletedTransactionsActivity extends AppCompatActivity {
 
     private RecyclerView rvCompleted;
@@ -38,7 +36,12 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
     private static final String KEY_SELECTED_TRANS = "selected_trans_id";
 
     private String selectedTransId;
-    private String currentUid;  // 👈 logged-in user id
+    private String currentUid;
+
+    /**
+     * Inits activity layout, RecyclerView and Firebase query
+     * Filters transactions for current user and sets up state restoration
+     */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,10 +51,8 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
         rvCompleted = findViewById(R.id.rvCompleted);
         rvCompleted.setLayoutManager(new LinearLayoutManager(this));
 
-        // Get current user uid
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
-            // no user -> nothing to show
             finish();
             return;
         }
@@ -66,7 +67,6 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
                 .child("completed")
                 .orderByChild("completionDate");
 
-        // Custom SnapshotParser with GenericTypeIndicator
         SnapshotParser<Map<String, Object>> parser = new SnapshotParser<Map<String, Object>>() {
             @NonNull
             @Override
@@ -90,16 +90,13 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
 
                 String transId = getRef(position).getKey();
 
-                // Read buyer/seller from the model
                 String buyerUid = (String) model.get("buyerUid");
                 String sellerUid = (String) model.get("sellerUid");
 
-                // 👇 Only show this item if current user is buyer OR seller
                 boolean isMine = (buyerUid != null && buyerUid.equals(currentUid))
                         || (sellerUid != null && sellerUid.equals(currentUid));
 
                 if (!isMine) {
-                    // Hide this row completely for other users' transactions
                     holder.itemView.setVisibility(View.GONE);
                     ViewGroup.LayoutParams params = holder.itemView.getLayoutParams();
                     if (params != null) {
@@ -108,7 +105,6 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
                     }
                     return;
                 } else {
-                    // Make sure visible for my transactions
                     holder.itemView.setVisibility(View.VISIBLE);
                     ViewGroup.LayoutParams params = holder.itemView.getLayoutParams();
                     if (params != null && params.height == 0) {
@@ -128,9 +124,7 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
 
             @NonNull
             @Override
-            public CompletedViewHolder onCreateViewHolder(@NonNull ViewGroup parent,
-                                                          int viewType) {
-                // Reuse pending_item layout, but hide Confirm button
+            public CompletedViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
                 View view = LayoutInflater.from(parent.getContext())
                         .inflate(R.layout.pending_item, parent, false);
                 return new CompletedViewHolder(view);
@@ -140,17 +134,29 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
         rvCompleted.setAdapter(adapter);
     }
 
+    /**
+     * Saves transaction ID for state restoration
+     */
+
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(KEY_SELECTED_TRANS, selectedTransId);
     }
 
+    /**
+     * Restores transaction ID from bundle
+     */
+
     @Override
     protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
         selectedTransId = savedInstanceState.getString(KEY_SELECTED_TRANS);
     }
+
+    /**
+     * Starts adapter listener
+     */
 
     @Override
     protected void onStart() {
@@ -160,6 +166,10 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Stops adapter listener to avoid mem leaks
+     */
+
     @Override
     protected void onStop() {
         super.onStop();
@@ -168,10 +178,16 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
         }
     }
 
-    // ViewHolder for completed transactions
+    /**
+     * ViewHolder to bind completed transaction data to RecyclerView item
+     */
     static class CompletedViewHolder extends RecyclerView.ViewHolder {
         TextView tvItem, tvRole, tvDate;
-        Button btnConfirm;  // hidden for completed
+        Button btnConfirm;
+
+        /**
+         * Constructor for initializing views from item layout
+         */
 
         CompletedViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -179,8 +195,12 @@ public class CompletedTransactionsActivity extends AppCompatActivity {
             tvRole = itemView.findViewById(R.id.tvRole);
             tvDate = itemView.findViewById(R.id.tvDate);
             btnConfirm = itemView.findViewById(R.id.btnConfirm);
-            btnConfirm.setVisibility(View.GONE); // no confirm for completed
+            btnConfirm.setVisibility(View.GONE);
         }
+
+        /**
+         * Binds transaction data to views and sets up click listeners
+         */
 
         void bind(Map<String, Object> data, String transId) {
             String itemName = (String) data.get("itemName");

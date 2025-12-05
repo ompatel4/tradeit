@@ -15,13 +15,18 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 
 /**
- * Handles user login (User Story 2).
- * Crash fixes: Full error handling, null checks, logcat for debugging.
+ * LoginActivity handles user auth using Firebase Auth
+ * Validates email/pass and navs to MainActivity upon successful login
  */
 public class LoginActivity extends AppCompatActivity {
-    private static final String TAG = "LoginActivity";  // For Logcat
+    private static final String TAG = "LoginActivity";
     private EditText etEmail, etPassword;
     private FirebaseAuth mAuth;
+
+    /**
+     * Inits activity layout and Firebase Auth
+     * Sets up button clock listeners
+     */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,7 +35,7 @@ public class LoginActivity extends AppCompatActivity {
             setContentView(R.layout.activity_login);
         } catch (Exception e) {
             Log.e(TAG, "Layout load failed: " + e.getMessage());
-            Toast.makeText(this, "Layout error—check activity_login.xml", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Layout error check activity_login.xml", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -40,8 +45,8 @@ public class LoginActivity extends AppCompatActivity {
         etPassword = findViewById(R.id.etPassword);
 
         if (etEmail == null || etPassword == null) {
-            Log.e(TAG, "Layout IDs not found—check activity_login.xml");
-            Toast.makeText(this, "UI error—IDs missing", Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Layout IDs not found check activity_login.xml");
+            Toast.makeText(this, "UI error IDs missing", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -51,7 +56,7 @@ public class LoginActivity extends AppCompatActivity {
 
         if (btnLogin == null || btnRegister == null) {
             Log.e(TAG, "Button IDs not found");
-            Toast.makeText(this, "UI error—buttons missing", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "UI error buttons missing", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -59,6 +64,11 @@ public class LoginActivity extends AppCompatActivity {
         btnLogin.setOnClickListener(v -> loginUser());
         btnRegister.setOnClickListener(v -> startActivity(new Intent(this, RegisterActivity.class)));
     }
+
+    /**
+     * Performs Firebase login with email/pass
+     * Validated input and navs to MainActivity upon successful login
+     */
 
     private void loginUser() {
         String email = etEmail.getText().toString().trim();
@@ -86,7 +96,7 @@ public class LoginActivity extends AppCompatActivity {
                             String errorMsg = "Login failed";
                             if (task.getException() instanceof FirebaseAuthException) {
                                 FirebaseAuthException authEx = (FirebaseAuthException) task.getException();
-                                errorMsg = authEx.getErrorCode();  // e.g., "ERROR_USER_NOT_FOUND"
+                                errorMsg = authEx.getErrorCode();
                             }
                             Toast.makeText(LoginActivity.this, errorMsg, Toast.LENGTH_LONG).show();
                         }

@@ -23,14 +23,20 @@ import com.google.firebase.database.Query;
 import java.util.Map;
 
 /**
- * Views user's posted items (supports update/delete from ViewItems).
- * Queries user's items (denormalized for simplicity, Story 9-10).
+ * MyItemsActivity displays user's posted items
+ * Allows for update and delete actions
  */
+
 public class MyItemsActivity extends AppCompatActivity {
 
     private RecyclerView rvMyItems;
     private FirebaseRecyclerAdapter<Map<String, Object>, ViewItemsActivity.ItemViewHolder> adapter;
     private FirebaseAuth mAuth = FirebaseAuth.getInstance();
+
+    /**
+     * Inits activity layout and RecyclerView
+     * Sets up Firebase query for user's items
+     */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,7 +54,6 @@ public class MyItemsActivity extends AppCompatActivity {
 
         String uid = mAuth.getCurrentUser().getUid();
 
-        // /users/{uid}/items ordered by postedDate
         Query query = FirebaseDatabase.getInstance()
                 .getReference("users")
                 .child(uid)
@@ -76,16 +81,13 @@ public class MyItemsActivity extends AppCompatActivity {
                                             int position,
                                             @NonNull Map<String, Object> model) {
 
-                // itemId under users/{uid}/items/{itemId}
                 String itemId = getRef(position).getKey();
 
-                // category id should be stored in the model as "catId"
                 String catId = null;
                 if (model.get("catId") != null) {
                     catId = model.get("catId").toString();
                 }
 
-                // NOW we pass real catId + itemId so update/delete know the path
                 holder.bind(model, catId, itemId);
             }
 
@@ -102,6 +104,10 @@ public class MyItemsActivity extends AppCompatActivity {
         rvMyItems.setAdapter(adapter);
     }
 
+    /**
+     * Starts adapter listener
+     */
+
     @Override
     protected void onStart() {
         super.onStart();
@@ -109,6 +115,10 @@ public class MyItemsActivity extends AppCompatActivity {
             adapter.startListening();
         }
     }
+
+    /**
+     * Stops adapter listener to avoid mem leaks
+     */
 
     @Override
     protected void onStop() {

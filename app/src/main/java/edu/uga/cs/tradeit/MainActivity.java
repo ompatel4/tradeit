@@ -14,12 +14,17 @@ import com.google.firebase.auth.FirebaseUser;
 import edu.uga.cs.tradeit.R;
 
 /**
- * Main dashboard after login. Logout (Story 3). Links to categories, pending, completed.
- * Fixed ActionBar conflict; added logging/null checks.
+ * MainActivity serves as main dashboard post login and allows for nav to various sections
+ * includes logout and checks for auth state
  */
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private FirebaseAuth mAuth;
+
+    /**
+     * Initialized activity layout, Firebase Auth and nav buttons
+     * Redirects to login if user in not authenticated
+     */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,7 +33,7 @@ public class MainActivity extends AppCompatActivity {
         mAuth = FirebaseAuth.getInstance();
         FirebaseUser user = mAuth.getCurrentUser();
         if (user == null) {
-            Log.w(TAG, "User null—redirecting to login");
+            Log.w(TAG, "User null redirecting to login");
             startActivity(new Intent(this, LoginActivity.class));
             finish();
             return;
@@ -37,7 +42,7 @@ public class MainActivity extends AppCompatActivity {
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         if (toolbar == null) {
-            Log.e(TAG, "Toolbar null—check activity_main.xml");
+            Log.e(TAG, "Toolbar null check activity_main.xml");
             Toast.makeText(this, "UI error: Toolbar missing", Toast.LENGTH_SHORT).show();
             finish();
             return;
@@ -50,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
         Button btnCompleted = findViewById(R.id.btnCompleted);
 
         if (btnCategories == null || btnMyItems == null || btnPending == null || btnCompleted == null) {
-            Log.e(TAG, "Button(s) null—check activity_main.xml IDs");
+            Log.e(TAG, "Button(s) null check activity_main.xml IDs");
             Toast.makeText(this, "UI error: Buttons missing", Toast.LENGTH_SHORT).show();
             finish();
             return;
@@ -62,11 +67,19 @@ public class MainActivity extends AppCompatActivity {
         btnCompleted.setOnClickListener(v -> startActivity(new Intent(this, CompletedTransactionsActivity.class)));
     }
 
+    /**
+     * Inflates main menu for toolbar
+     */
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_menu, menu);
         return true;
     }
+
+    /**
+     * Handles menu item selection
+     */
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {

@@ -34,14 +34,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Categories:
- *  - View list alphabetically (4)
- *  - Add category (5)
- *  - Update own category (6)
- *  - Delete own category if empty (7)
- *  - Click category -> view items (11)
- *  - Saves basic state on rotation (16)
+ * CategoriesActivity manages the list of trade categories which enables users to view, add, update and delete categories.
+ * Only owners of a category can edit them and enables navigation to item sections within categories.
  */
+
 public class CategoriesActivity extends AppCompatActivity {
 
     private RecyclerView rvCategories;
@@ -51,7 +47,11 @@ public class CategoriesActivity extends AppCompatActivity {
     private static final String KEY_SELECTED_CAT = "selected_category";
     private static final String KEY_LIST_STATE = "list_state";
 
-    String selectedCategoryId;   // so ViewHolder can update it
+    String selectedCategoryId;
+
+    /**
+     * Initializes the activity layout, RecyclerView and event listeners
+     */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,19 +60,22 @@ public class CategoriesActivity extends AppCompatActivity {
 
         rvCategories = findViewById(R.id.rvCategories);
         rvCategories.setLayoutManager(new LinearLayoutManager(this));
-        // Match ViewItemsActivity: disable item animations to avoid inconsistency crashes
         rvCategories.setItemAnimator(null);
 
         if (savedInstanceState != null) {
             selectedCategoryId = savedInstanceState.getString(KEY_SELECTED_CAT);
             ArrayList<String> savedList = savedInstanceState.getStringArrayList(KEY_LIST_STATE);
-            // Firebase will reload live data; savedList is not strictly needed here
         }
 
         setupAdapter();
 
         findViewById(R.id.btnAddCategory).setOnClickListener(v -> showAddDialog());
     }
+
+    /**
+     * Setup for Firebase for the categories list
+     * Configures RecyclerView with adapter
+     */
 
     private void setupAdapter() {
         Query query = FirebaseDatabase.getInstance()
@@ -106,7 +109,6 @@ public class CategoriesActivity extends AppCompatActivity {
 
                 holder.bind(catName, catId, creatorUid);
 
-                // simple selection highlight if you want
                 if (catId != null && catId.equals(selectedCategoryId)) {
                     holder.itemView.setSelected(true);
                 } else {
@@ -122,11 +124,15 @@ public class CategoriesActivity extends AppCompatActivity {
                 return new CategoryViewHolder(view);
             }
 
-            // IMPORTANT: no getItemId override, no stable IDs
         };
 
         rvCategories.setAdapter(adapter);
     }
+
+    /**
+     * Shows dialog for new category
+     * Checks inputs and saves to Firebase
+     */
 
     private void showAddDialog() {
         EditText etName = new EditText(this);
@@ -149,14 +155,17 @@ public class CategoriesActivity extends AppCompatActivity {
                     ref.child("name").setValue(name);
                     ref.child("createdDate").setValue(ServerValue.TIMESTAMP);
                     ref.child("creatorUid").setValue(mAuth.getCurrentUser().getUid());
-                    // optional: init items node
                     ref.child("items").setValue(null);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    // Update category name (owner only)
+    /**
+     * Shows dialog for updating a category
+     * Checks input and updates Firebase
+     */
+
     public void showUpdateDialog(String catId, String oldName) {
         EditText etNewName = new EditText(this);
         etNewName.setText(oldName);
@@ -186,7 +195,11 @@ public class CategoriesActivity extends AppCompatActivity {
                 .show();
     }
 
-    // Delete allowed only if category has no items (owner only)
+    /**
+     * Checks if category is empty and shows confirmation dialog for deleting a category
+     * Deletes from Firebase once confirmed
+     */
+
     public void showDeleteDialog(String catId) {
         DatabaseReference itemsRef = FirebaseDatabase.getInstance()
                 .getReference("categories")
@@ -223,6 +236,10 @@ public class CategoriesActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Saves category ID for state
+     */
+
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
@@ -230,12 +247,19 @@ public class CategoriesActivity extends AppCompatActivity {
         outState.putStringArrayList(KEY_LIST_STATE, new ArrayList<>());
     }
 
+    /**
+     * Restores category ID from bundle
+     */
+
     @Override
     protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
         selectedCategoryId = savedInstanceState.getString(KEY_SELECTED_CAT);
-        // adapter will rebind and apply selection
     }
+
+    /**
+     * Starts adapter listener
+     */
 
     @Override
     protected void onStart() {
@@ -245,6 +269,10 @@ public class CategoriesActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Stops adapter listener
+     */
+
     @Override
     protected void onStop() {
         super.onStop();
@@ -253,18 +281,11 @@ public class CategoriesActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // Extra safety: detach adapter when Activity is destroyed
-        if (rvCategories != null) {
-            rvCategories.setAdapter(null);
-        }
-    }
+    /**
+     * ViewHolder binds category data to RecyclerView item
+     * Handles click for nav and edit/delete button
+     */
 
-    // ------------------------
-    // ViewHolder for categories
-    // ------------------------
     static class CategoryViewHolder extends RecyclerView.ViewHolder {
         TextView tvName;
         Button btnEdit, btnDelete;
@@ -273,12 +294,20 @@ public class CategoriesActivity extends AppCompatActivity {
         String creatorUid;
         String catName;
 
+        /**
+         * Constructor inits view from item layout
+         */
         CategoryViewHolder(@NonNull View itemView) {
             super(itemView);
             tvName = itemView.findViewById(R.id.textViewCategoryName);
             btnEdit = itemView.findViewById(R.id.buttonEditCategory);
             btnDelete = itemView.findViewById(R.id.buttonDeleteCategory);
         }
+
+        /**
+         * Binds category data to views and sets up click listeners
+         * Shows edit/delete button for owner
+         */
 
         void bind(String catName, String catId, String creatorUid) {
             this.catName = catName;
@@ -287,7 +316,6 @@ public class CategoriesActivity extends AppCompatActivity {
 
             tvName.setText(catName != null ? catName : "(no name)");
 
-            // Tap row -> open items in that category
             itemView.setOnClickListener(v -> {
                 CategoriesActivity activity = (CategoriesActivity) itemView.getContext();
                 activity.selectedCategoryId = catId;
@@ -297,7 +325,6 @@ public class CategoriesActivity extends AppCompatActivity {
                 itemView.getContext().startActivity(intent);
             });
 
-            // Only category owner sees Edit/Delete
             String currentUid = FirebaseAuth.getInstance().getCurrentUser() != null
                     ? FirebaseAuth.getInstance().getCurrentUser().getUid()
                     : null;
