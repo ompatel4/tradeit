@@ -201,6 +201,11 @@ public class ViewItemsActivity extends AppCompatActivity {
                 price = "free";
             }
             tvPrice.setText(price);
+            if (price.equalsIgnoreCase("free")) {
+                btnBuy.setText("Accept");
+            } else {
+                btnBuy.setText("Buy");
+            }
 
             Object tsObj = data.get("postedDate");
             if (tsObj instanceof Long) {
